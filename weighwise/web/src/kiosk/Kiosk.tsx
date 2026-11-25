@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, COMPOSITION_DISCLAIMER, DISCLAIMER, type Profile } from '../api';
 import { LoginForm } from '../components/LoginForm';
 import { ProfileForm } from '../components/ProfileForm';
@@ -23,6 +23,7 @@ const HYGIENE = [
 ];
 
 const IDLE_MS = 90_000;
+const ANALYSIS_WAIT_MS = 60_000;
 
 interface SessionView {
   state: string;
@@ -58,6 +59,7 @@ export function Kiosk() {
   const [online, setOnline] = useState(navigator.onLine);
   const [idleResetMs, setIdleResetMs] = useState(12_000);
   const idleTimer = useRef<ReturnType<typeof setTimeout>>();
+  const resultRequested = useRef(false);
 
   useEffect(() => {
     const up = () => setOnline(true);
@@ -84,6 +86,7 @@ export function Kiosk() {
     setResult(null);
     setMsg('');
     setBusy(false);
+    resultRequested.current = false;
   }, []);
 
   const cancel = useCallback(async () => {
@@ -156,16 +159,47 @@ export function Kiosk() {
     return () => clearInterval(id);
   }, [sessionId, step, refresh]);
 
-  // Measurement outcome -> result screen.
+  // Measurement outcome -> result screen. Polling re-runs this effect, so only one request may be in flight,
+  // and a late response must never pull the kiosk back once the user has moved on.
   useEffect(() => {
-    if (step !== 'measure' || !view) return;
-    if (['saved', 'notified', 'failed_notify'].includes(view.state) && !result) {
-      void call<Result>(`/sessions/${sessionId}/result`, 'GET').then((r) => {
+    if (step !== 'measure' || !view || result || resultRequested.current) return;
+    if (!['saved', 'notified', 'failed_notify'].includes(view.state)) return;
+    resultRequested.current = true;
+    const forSession = sessionId;
+    void call<Result>(`/sessions/${forSession}/result`, 'GET')
+      .then((r) => {
         setResult(r);
-        setStep('result');
+        setStep((s) => (s === 'measure' ? 'result' : s));
+      })
+      .catch(() => {
+        resultRequested.current = false; // allow the next poll to retry
       });
-    }
   }, [view, step, result, sessionId, call]);
+
+  // The AI analysis runs after the save and can take tens of seconds; poll until it lands, then stop waiting.
+  const [analysisTimedOut, setAnalysisTimedOut] = useState(false);
+  useEffect(() => {
+    if (step !== 'result' || !result || result.explanation) return;
+    const started = Date.now();
+    let active = true;
+    const id = setInterval(() => {
+      if (Date.now() - started > ANALYSIS_WAIT_MS) {
+        setAnalysisTimedOut(true);
+        clearInterval(id);
+        return;
+      }
+      void call<Result>(`/sessions/${sessionId}/result`, 'GET')
+        .then((r) => active && r.explanation && setResult(r))
+        .catch(() => undefined);
+    }, 2500);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [step, result, sessionId, call]);
+  useEffect(() => {
+    if (step === 'welcome') setAnalysisTimedOut(false);
+  }, [step]);
 
   const stepIdx = BAR.findIndex((b) => b.steps.includes(step));
   const showCancel = step !== 'welcome' && step !== 'done' && !(step === 'measure' && view?.state === 'measuring');
@@ -332,13 +366,21 @@ export function Kiosk() {
           <Metric l="מסת שריר (הערכה)" v={result.muscleMassKg != null ? `${fmt(result.muscleMassKg)} ק״ג` : '—'} />
           <Metric l="אחוז מים (הערכה)" v={result.bodyWaterPct != null ? `${fmt(result.bodyWaterPct)}%` : '—'} />
         </div>
-        {result.explanation && <p style={{ textAlign: 'right' }}>{result.explanation}</p>}
+        {result.explanation ? (
+          <p style={{ textAlign: 'right' }}>{result.explanation}</p>
+        ) : analysisTimedOut ? (
+          <div className="notice">הפענוח האישי עדיין בהכנה. הוא יופיע באזור האישי ובהודעה שתישלח אליכם.</div>
+        ) : (
+          <div className="notice" role="status" aria-live="polite">מנתחים את הנתונים שלכם ומכינים פענוח אישי...</div>
+        )}
         <ul style={{ textAlign: 'right' }}>{result.recommendations?.map((r) => <li key={r}>{r}</li>)}</ul>
         {result.suggestProfessional && <div className="notice">אם השינוי מעסיק אתכם, אפשר להתייעץ עם איש מקצוע.</div>}
         <div className="notice">{DISCLAIMER} {COMPOSITION_DISCLAIMER}</div>
         <div role="status">
           {!n || n.status === 'pending' || n.status === 'retrying'
-            ? 'שולחים את התוצאה...'
+            ? result.explanation
+              ? 'שולחים את התוצאה...'
+              : null
             : n.status === 'sent'
               ? `התוצאה נשלחה אליכם ${n.channel === 'sms' ? 'ב-SMS' : 'למייל'}`
               : 'השליחה תתבצע בהמשך, התוצאה שמורה באזור האישי'}
@@ -429,3 +471,4 @@ function Prep({ busy, msg, onConfirm }: { busy: boolean; msg: string; onConfirm:
     </div>
   );
 }
+

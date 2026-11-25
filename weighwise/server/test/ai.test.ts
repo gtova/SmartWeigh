@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach } from 'vitest';
 import { pool } from '../src/db.js';
 import { computeFlags, type Point } from '../src/services/ai/flags.js';
 import { ClaudeLLM, llm, MockLLM, SYSTEM_PROMPT, buildUserPrompt, type AgentInput, type LLMProvider } from '../src/services/ai/llm.js';
@@ -95,6 +95,8 @@ describe('output validation and fallback', () => {
     return {
       name: 'stub',
       model: 's',
+      promptVersion: 'v1',
+      systemPrompt: SYSTEM_PROMPT,
       async generate() {
         const r = replies[Math.min(i++, replies.length - 1)];
         if (r instanceof Error) throw r;
@@ -157,7 +159,7 @@ describe('persistence', () => {
     const u = await makeUser();
     const m1 = await addMeasurement(u.id, 70, 0);
     let called = 0;
-    llm.provider = { name: 'spy', model: 'x', generate: async () => (called++, JSON.stringify({ explanation: 'שלום.', recommendations: ['א.', 'ב.'], suggest_professional: false })) };
+    llm.provider = { name: 'spy', model: 'x', promptVersion: 'v1', systemPrompt: SYSTEM_PROMPT, generate: async () => (called++, JSON.stringify({ explanation: 'שלום.', recommendations: ['א.', 'ב.'], suggest_professional: false })) };
     await generateRecommendation(m1);
     expect(called).toBe(0); // no ai_processing consent yet
     let row = (await pool.query('SELECT * FROM recommendations WHERE measurement_id=$1', [m1])).rows[0];
@@ -184,3 +186,4 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY || !process.env.LLM_MODEL)('real 
     });
   }
 });
+

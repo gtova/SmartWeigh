@@ -1,5 +1,7 @@
+import { GoogleGenAI } from '@google/genai';
 import { config } from '../../config.js';
 import type { Changes, Flag } from './flags.js';
+import { GEMINI_PROMPT_VERSION, GEMINI_SYSTEM_PROMPT } from './prompts.js';
 import { PROMPT_VERSION, type LlmOutput } from './schema.js';
 
 /** What the model sees: no name, email, phone or ids. */
@@ -7,7 +9,9 @@ export interface AgentInput {
   age: number;
   heightCm: number;
   current: { weightKg: number; bmi: number | null; bodyFatPct: number | null; muscleMassKg: number | null; bodyWaterPct: number | null };
-  history: { date: string; weightKg: number; bodyFatPct: number | null }[];
+  history: { date: string; weightKg: number; bmi?: number | null; bodyFatPct: number | null; muscleMassKg?: number | null; bodyWaterPct?: number | null }[];
+  /** Earlier recommendations, newest first. Whether they were followed is unknown. */
+  previousRecommendations?: { date: string; recommendations: string[] }[];
   changes: Changes;
   flags: Flag[];
 }
@@ -15,6 +19,10 @@ export interface AgentInput {
 export interface LLMProvider {
   readonly name: string;
   readonly model: string;
+  /** Recorded with every stored recommendation. */
+  readonly promptVersion: string;
+  /** System prompt this provider is driven by. */
+  readonly systemPrompt: string;
   generate(prompt: { system: string; user: string }): Promise<string>;
 }
 
@@ -34,6 +42,8 @@ export const buildUserPrompt = (input: AgentInput) => JSON.stringify(input);
 export class MockLLM implements LLMProvider {
   readonly name = 'mock';
   readonly model = 'template-v1';
+  readonly promptVersion = PROMPT_VERSION;
+  readonly systemPrompt = SYSTEM_PROMPT;
   async generate({ user }: { user: string }) {
     const i = JSON.parse(user) as AgentInput;
     return JSON.stringify(templateOutput(i));
@@ -62,6 +72,8 @@ export function templateOutput(i: AgentInput): LlmOutput {
 /** Real provider (Anthropic Messages API). Key and model come from env, server-side only. */
 export class ClaudeLLM implements LLMProvider {
   readonly name = 'claude';
+  readonly promptVersion = PROMPT_VERSION;
+  readonly systemPrompt = SYSTEM_PROMPT;
   constructor(
     readonly model: string,
     private apiKey: string,
@@ -82,6 +94,60 @@ export class ClaudeLLM implements LLMProvider {
   }
 }
 
-export const llm: { provider: LLMProvider } = {
-  provider: config.llm.provider === 'claude' ? new ClaudeLLM(config.llm.model, config.llm.apiKey) : new MockLLM(),
-};
+export interface GeminiOptions {
+  thinkingLevel: 'minimal' | 'low' | 'medium' | 'high';
+  googleSearch: boolean;
+  maxOutputTokens: number;
+  timeoutMs: number;
+}
+
+/** Google Gemini via the Interactions API (@google/genai). Key comes from GEMINI_API_KEY, server-side only. */
+export class GeminiLLM implements LLMProvider {
+  readonly name = 'gemini';
+  readonly promptVersion = GEMINI_PROMPT_VERSION;
+  readonly systemPrompt = GEMINI_SYSTEM_PROMPT;
+  private ai: GoogleGenAI;
+  constructor(
+    readonly model: string,
+    apiKey: string,
+    private opts: GeminiOptions,
+  ) {
+    if (!apiKey) throw new Error('GEMINI_API_KEY is required when LLM_PROVIDER=gemini');
+    this.ai = new GoogleGenAI({ apiKey });
+  }
+  async generate({ system, user }: { system: string; user: string }) {
+    const call = this.ai.interactions.create({
+      model: this.model,
+      input: `נתוני המדידה (JSON):\n${user}`,
+      system_instruction: system,
+      ...(this.opts.googleSearch ? { tools: [{ type: 'google_search' as const }] } : {}),
+      generation_config: { max_output_tokens: this.opts.maxOutputTokens, thinking_level: this.opts.thinkingLevel },
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, rej) => {
+      timer = setTimeout(() => rej(new Error('llm_timeout')), this.opts.timeoutMs);
+    });
+    try {
+      const interaction = await Promise.race([call, timeout]);
+      return interaction.output_text ?? '';
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function createProvider(): LLMProvider {
+  const { llm: c } = config;
+  if (c.provider === 'claude') return new ClaudeLLM(c.model, c.apiKey);
+  if (c.provider === 'gemini') {
+    return new GeminiLLM(c.model || 'models/gemini-3.5-flash', c.geminiKey, {
+      thinkingLevel: c.thinkingLevel,
+      googleSearch: c.googleSearch,
+      maxOutputTokens: c.maxOutputTokens,
+      timeoutMs: c.timeoutMs,
+    });
+  }
+  return new MockLLM();
+}
+
+export const llm: { provider: LLMProvider } = { provider: createProvider() };

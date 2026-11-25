@@ -21,6 +21,7 @@ Object.assign(process.env, {
   MEASURE_DURATION_MS: '1500',
   IDLE_RESET_MS: '2500',
   WEB_ORIGIN: 'http://localhost:5173',
+  LLM_PROVIDER: 'mock', // e2e never calls a paid model
 });
 
 const { providers } = await import('../src/providers/message.js');
@@ -44,3 +45,4 @@ const stop = async () => {
 };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
+

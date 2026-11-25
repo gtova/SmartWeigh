@@ -31,7 +31,7 @@ measurementsRouter.get('/:id', async (req, res) => {
   const id = z.string().uuid().safeParse(req.params.id);
   if (!id.success) throw new HttpError(404, 'not_found');
   const r = await pool.query(
-    `SELECT ${COLS}, r.explanation, r.recommendations, r.suggest_professional AS "suggestProfessional"
+    `SELECT ${COLS}, r.explanation, r.recommendations, r.suggest_professional AS "suggestProfessional", r.report
      FROM measurements m LEFT JOIN recommendations r ON r.measurement_id=m.id WHERE m.id=$1 AND m.user_id=$2`,
     [id.data, req.user!.id],
   );
@@ -52,7 +52,7 @@ meRouter.get('/export', async (req, res) => {
     consents: await q('SELECT type, terms_version, granted_at, revoked_at FROM consents WHERE user_id=$1'),
     measurements: await q('SELECT id, weight_kg, bmi, body_fat_pct, muscle_mass_kg, body_water_pct, measured_at FROM measurements WHERE user_id=$1 ORDER BY measured_at'),
     recommendations: await q(
-      'SELECT r.measurement_id, r.explanation, r.recommendations, r.created_at FROM recommendations r JOIN measurements m ON m.id=r.measurement_id WHERE m.user_id=$1',
+      'SELECT r.measurement_id, r.explanation, r.recommendations, r.report, r.created_at FROM recommendations r JOIN measurements m ON m.id=r.measurement_id WHERE m.user_id=$1',
     ),
   };
   res.setHeader('Content-Disposition', 'attachment; filename="weighwise-export.json"');
@@ -81,3 +81,5 @@ export async function purgeDeletedUsers(olderThanMs = config.purgeAfterMs) {
   const r = await pool.query("DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at <= now() - ($1 || ' milliseconds')::interval", [String(olderThanMs)]);
   return r.rowCount ?? 0;
 }
+
+

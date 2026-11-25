@@ -1,9 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+﻿import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, ApiError, COMPOSITION_DISCLAIMER, DISCLAIMER, type Measurement, type Profile } from '../api';
 import { LoginForm } from '../components/LoginForm';
 import { ProfileForm } from '../components/ProfileForm';
+import { Report } from '../components/Report';
 
 // ---------- auth context ----------
 interface Auth {
@@ -328,6 +329,12 @@ export function MeasurementPage() {
         <MetricCard l="מסת שריר (הערכה)" v={fmt(m.muscleMassKg, ' ק״ג')} hint={d('muscleMassKg')} />
         <MetricCard l="אחוז מים (הערכה)" v={fmt(m.bodyWaterPct, '%')} hint={d('bodyWaterPct')} />
       </div>
+      {m.report && (
+        <div className="card">
+          <h2>פענוח אישי</h2>
+          <Report text={m.report} />
+        </div>
+      )}
       {m.explanation && (
         <div className="card">
           <h3>הסבר והמלצות</h3>
@@ -414,3 +421,4 @@ export function Settings() {
     </div>
   );
 }
+

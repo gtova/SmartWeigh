@@ -72,7 +72,7 @@ sessionsRouter.get('/:id/result', async (req, res) => {
   const r = await pool.query(
     `SELECT m.id, m.weight_kg AS "weightKg", m.bmi, m.body_fat_pct AS "bodyFatPct", m.muscle_mass_kg AS "muscleMassKg", m.body_water_pct AS "bodyWaterPct",
             m.is_outlier AS "isOutlier", m.measured_at AS "measuredAt",
-            r.explanation, r.recommendations, r.suggest_professional AS "suggestProfessional",
+            r.explanation, r.recommendations, r.suggest_professional AS "suggestProfessional", r.report,
             (SELECT weight_kg FROM measurements p WHERE p.user_id=m.user_id AND p.measured_at < m.measured_at ORDER BY p.measured_at DESC LIMIT 1) AS "previousWeightKg"
      FROM measurements m LEFT JOIN recommendations r ON r.measurement_id=m.id WHERE m.session_id=$1`,
     [s.id],
@@ -86,4 +86,5 @@ sessionsRouter.post('/:id/cancel', async (req, res) => {
   await cancelSession(s.id);
   res.json({ ok: true });
 });
+
 

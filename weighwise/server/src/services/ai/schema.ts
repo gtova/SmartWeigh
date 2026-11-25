@@ -1,9 +1,11 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 
 export const PROMPT_VERSION = 'v1';
 
-// Words the product must never show (no calories, weight goals, diets, or "normal/high" judgements).
-export const FORBIDDEN = ['קלורי', 'דיאטה', 'יעד משקל', 'משקל יעד', 'הרזי', 'להרזות', 'צום', 'תקין', 'גבוה', 'השמנה', 'שמן מדי'];
+// Words the short kiosk texts must never show (no calories, weight goals, diets, or "normal/high" judgements).
+export const FORBIDDEN = ['קלורי', 'דיאטה', 'יעד משקל', 'משקל יעד', 'הרזי', 'להרזות', 'צום', 'תקין', 'תקינ', 'גבוה', 'נמוך מדי', 'השמנה', 'שמן מדי'];
+// The long report may legitimately say "avoid extreme diets"; only hard violations are rejected there.
+export const REPORT_FORBIDDEN = ['קלורי', 'יעד משקל', 'משקל יעד', 'השמנה בעייתית', 'נכשלת', 'מצב גרוע', 'תקין', 'תקינ'];
 
 const hebrew = /[\u0590-\u05FF]/;
 const text = (max: number) =>
@@ -14,14 +16,26 @@ export const outputSchema = z.object({
   recommendations: z.array(text(160)).min(2).max(3),
   suggest_professional: z.boolean(),
 });
-export type LlmOutput = z.infer<typeof outputSchema>;
+export type LlmOutput = z.infer<typeof outputSchema> & { report?: string };
+
+const reportSchema = z
+  .string()
+  .trim()
+  .min(50)
+  .max(8000)
+  .refine((s) => hebrew.test(s))
+  .refine((s) => !REPORT_FORBIDDEN.some((w) => s.includes(w)));
 
 export function parseOutput(raw: string): LlmOutput | null {
   const m = /\{[\s\S]*\}/.exec(raw);
   if (!m) return null;
   try {
-    const r = outputSchema.safeParse(JSON.parse(m[0]));
-    return r.success ? r.data : null;
+    const obj = JSON.parse(m[0]);
+    const r = outputSchema.safeParse(obj);
+    if (!r.success) return null;
+    // A report that fails the checks is dropped; the validated short texts are still used.
+    const report = reportSchema.safeParse(obj.report);
+    return report.success ? { ...r.data, report: report.data } : r.data;
   } catch {
     return null;
   }
@@ -33,3 +47,4 @@ export const NEUTRAL: LlmOutput = {
   recommendations: ['כדאי למדוד בתנאים דומים, למשל באותה שעה ביום, כדי שההשוואה תהיה משמעותית.', 'שתייה סדירה לאורך היום עוזרת לקבל תמונה יציבה יותר.'],
   suggest_professional: false,
 };
+

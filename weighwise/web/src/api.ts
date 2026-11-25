@@ -1,4 +1,4 @@
-export class ApiError extends Error {
+﻿export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
@@ -43,6 +43,7 @@ export interface Measurement {
   explanation?: string | null;
   recommendations?: string[] | null;
   suggestProfessional?: boolean | null;
+  report?: string | null;
   previous?: Measurement | null;
 }
 
@@ -59,3 +60,4 @@ export interface Profile {
 
 export const DISCLAIMER = 'התוכן נועד לעידוד בלבד ואינו מהווה ייעוץ רפואי או תזונתי.';
 export const COMPOSITION_DISCLAIMER = 'הערכות הרכב גוף הן הערכה בלבד ואינן אבחון.';
+

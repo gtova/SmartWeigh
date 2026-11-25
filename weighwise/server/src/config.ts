@@ -30,10 +30,20 @@ export const config = {
     trendPct: num(process.env.TREND_PCT, 5),
     compositionJumpPts: num(process.env.COMPOSITION_JUMP_PTS, 3),
   },
+  ai: {
+    // Background retries for a fallback analysis (spaced out so a transient 429/503 can clear).
+    retryDelaysMs: (process.env.AI_RETRY_DELAYS_MS ?? '30000,120000,600000').split(',').map((s) => Number(s.trim())).filter((n) => n > 0),
+    sweepIntervalMs: num(process.env.AI_SWEEP_INTERVAL_MS, 15 * 60_000),
+  },
   llm: {
     provider: process.env.LLM_PROVIDER ?? 'mock',
     model: process.env.LLM_MODEL ?? '',
     apiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    geminiKey: process.env.GEMINI_API_KEY ?? '',
+    thinkingLevel: (process.env.GEMINI_THINKING_LEVEL ?? 'medium') as 'minimal' | 'low' | 'medium' | 'high',
+    googleSearch: process.env.GEMINI_GOOGLE_SEARCH !== '0',
+    maxOutputTokens: num(process.env.LLM_MAX_TOKENS, 65536),
+    timeoutMs: num(process.env.LLM_TIMEOUT_MS, 90_000),
   },
 };
 
@@ -44,5 +54,6 @@ function jwtSecret(): string {
   if (process.env.NODE_ENV === 'production') throw new Error('JWT_SECRET is required in production');
   return 'dev-only-secret-change-me';
 }
+
 
 
