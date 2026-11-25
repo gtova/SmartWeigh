@@ -7,6 +7,7 @@
   ],
   "scripts": {
     "build": "npm run build -w server && npm run build -w web",
+    "start": "npm start -w server",
     "test": "npm test -w server",
     "e2e": "playwright test"
   },

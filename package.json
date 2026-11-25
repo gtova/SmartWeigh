@@ -1,0 +1,11 @@
+{
+  "name": "smartweigh-root",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm ci --prefix weighwise --include=dev && npm run build --prefix weighwise",
+    "start": "npm start --prefix weighwise"
+  }
+}

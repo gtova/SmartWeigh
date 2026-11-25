@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -37,11 +40,22 @@ export function createApp() {
     });
   }
 
-  app.use('/auth', authRouter);
-  app.use('/users', usersRouter);
-  app.use('/sessions', sessionsRouter);
-  app.use('/measurements', measurementsRouter);
-  app.use('/me', meRouter);
+  const api = express.Router();
+  api.use('/auth', authRouter);
+  api.use('/users', usersRouter);
+  api.use('/sessions', sessionsRouter);
+  api.use('/measurements', measurementsRouter);
+  api.use('/me', meRouter);
+  // The web app calls /api/*; Vite strips the prefix in dev, so keep both mounts.
+  app.use('/api', api);
+  app.use(api);
+
+  // Production: serve the built web app from the same service (SPA fallback to index.html).
+  const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');
+  if (fs.existsSync(path.join(webDist, 'index.html'))) {
+    app.use(express.static(webDist));
+    app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
